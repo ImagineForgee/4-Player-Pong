@@ -1,0 +1,4 @@
+[submodule "deps/purrsock"]
+	path = deps/purrsock
+	url = https://github.com/ClawsoftSolutions/purrsock
+	branch = noexample
