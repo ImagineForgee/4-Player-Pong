@@ -14,7 +14,7 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 
 message(${SOURCES})
 
-target_link_libraries(${PROJECT_NAME} common purrsock)
+target_link_libraries(${PROJECT_NAME} purrsock)
 
 target_include_directories(${PROJECT_NAME} PUBLIC
         "${PROJECT_BINARY_DIR}" "${PROJECT_SOURCE_DIR}"

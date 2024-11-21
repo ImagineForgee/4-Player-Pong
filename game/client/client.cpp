@@ -3,69 +3,88 @@
 #include <cstring>
 #include "../common/game_state.h"
 
-bool InitClient(Client* client, const char* server_ip, ps_port_t server_port) {
+bool CheckResult(ps_result_t result, const char* operation) {
+    if (result != PS_SUCCESS) {
+        std::cerr << operation << " failed: " << ps_result_to_cstr(result) << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool InitClient(Client* client, Server* server, const char* server_ip, ps_port_t server_port) {
     if (ps_init() != true) {
         return false;
     }
 
-    client->server_ip = server_ip;
-    client->server_port = server_port;
-
-    ps_result_t result = ps_create_socket(&client->socket, PS_PROTOCOL_TCP);
-    if (result != PS_SUCCESS) {
-        std::cerr << "Failed to create socket: " << ps_result_to_cstr(result) << std::endl;
+    ps_result_t cresult = ps_create_socket(&client->socket, PS_PROTOCOL_UDP);
+    if (!CheckResult(cresult, "Create UDP socket")) {
         return false;
     }
 
-    result = ps_connect_socket(client->socket, server_ip, server_port);
-    if (result != PS_SUCCESS) {
-        std::cerr << "Failed to connect to server: " << ps_result_to_cstr(result) << std::endl;
-        ps_destroy_socket(client->socket);
+    ps_result_t bind_result = ps_bind_socket(client->socket, nullptr, 0);
+    if (!CheckResult(bind_result, "Bind client socket")) {
         return false;
     }
 
-    std::cout << "Connected to server at " << server_ip << ":" << server_port << std::endl;
+    server->server_ip = server_ip;
+    server->server_port = server_port;
+
+    ps_result_t sresult = ps_create_socket_from_addr(&server->socket, PS_PROTOCOL_UDP, server->server_ip, server->server_port);
+    if (!CheckResult(sresult, "Create UDP socket from server address")) {
+        return false;
+    }
+
+    std::cout << "UDP socket created. Ready to send/receive packets.\n";
     return true;
 }
 
-bool SendPaddleMovement(Client* client, const float* paddlePositions, size_t data_size) {
+bool SendGameState(Client* client, Server* server, const GameState& gameState) {
     ps_packet_t packet;
-    packet.size = data_size;
-    packet.buf = new char[data_size];
-    std::memcpy(packet.buf, paddlePositions, data_size);
+    packet.size = sizeof(gameState);
+    packet.buf = const_cast<char*>(reinterpret_cast<const char*>(&gameState));
 
-    ps_result_t result = ps_send_socket_packet(client->socket, packet, client->socket);
-    delete[] packet.buf;
-
-    return (result == PS_SUCCESS);
-}
-
-bool ReceiveGameState(Client* client, Paddle paddles[4], Ball* ball) {
-    ps_packet_t packet;
-    packet.size = sizeof(GameState);
-    packet.buf = new char[packet.size];
-
-    ps_result_t result = ps_read_socket_packet(client->socket, &packet, nullptr);
-    if (result != PS_SUCCESS) {
-        printf("Failed to receive packet. Result: %d\n", result);
-        delete[] packet.buf;
+    ps_result_t result = ps_send_socket_packet(client->socket, packet, server->socket);
+    if (!CheckResult(result, "Send game state to server")) {
         return false;
     }
 
-    printf("Received packet of size %zu\n", packet.size);
+    std::cout << "Game state sent successfully.\n";
+    return true;
+}
 
-    GameState* gameState = reinterpret_cast<GameState*>(packet.buf);
+bool ReceiveGameState(Client* client, Server* server, Paddle paddles[4], Ball* ball) {
+    ps_packet_t packet;
+    GameState gamestate;
+
+    initializeGameState(gamestate);
+
+    packet.size = sizeof(gamestate);
+    packet.buf = reinterpret_cast<char*>(&gamestate);
+
+    std::cout << "Receiving packet..." << std::endl;
+    std::cout << "Packet buffer size: " << packet.size << std::endl;
+    std::cout << "Packet buffer address: " << static_cast<void*>(packet.buf) << std::endl;
+
+    ps_result_t result = ps_read_socket_packet(client->socket, &packet, &server->socket);
+    std::cout << "Read result: " << ps_result_to_cstr(result) << std::endl;
+
+    if (!CheckResult(result, "Read socket packet")) {
+        return false;
+    }
+
+    std::cout << "Received packet of size " << packet.size << std::endl;
 
     for (int i = 0; i < 4; ++i) {
-        paddles[i].position = gameState->paddlePositions[i];
+        paddles[i].position = gamestate.paddlePositions[i];
     }
-    ball->position.x = gameState->ballPosition[0];
-    ball->position.y = gameState->ballPosition[1];
+    ball->position.x = gamestate.ballPosition[0];
+    ball->position.y = gamestate.ballPosition[1];
 
-    delete[] packet.buf;
     return true;
 }
 
-void CloseClient(Client* client) {
+void CloseClient(Client* client, Server* server) {
     ps_destroy_socket(client->socket);
+    ps_destroy_socket(server->socket);
+    std::cout << "Client socket destroyed successfully.\n";
 }

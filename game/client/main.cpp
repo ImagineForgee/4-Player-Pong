@@ -3,19 +3,23 @@
 #include "game.hpp"
 #include "client.hpp"
 #include "cstdio";
+#include "../common/game_state.h"
 
 int main() {
     Client client;
+    Server server;
+
     const char* server_ip = "127.0.0.1";
     ps_port_t server_port = 12345;
 
-    if (!InitClient(&client, server_ip, server_port)) {
+    if (!InitClient(&client, &server, server_ip, server_port)) {
         return -1;
     }
 
     Paddle paddles[4];
     Ball ball;
     int scores[4];
+    GameState gameState;
 
     InitGame(paddles, &ball, scores);
 
@@ -26,26 +30,25 @@ int main() {
         if (IsKeyDown(KEY_A)) paddles[1].position -= 0.01f;
         if (IsKeyDown(KEY_D)) paddles[1].position += 0.01;
 
-        for (int i = 0; i < 4; i++) {
-            if (paddles[i].position < PADDLE_SIZE / 2.0f / SCREEN_SIZE.x) {
-                paddles[i].position = PADDLE_SIZE / 2.0f / SCREEN_SIZE.x;
-            }
-            if (paddles[i].position > 1.0f - PADDLE_SIZE / 2.0f / SCREEN_SIZE.x) {
-                paddles[i].position = 1.0f - PADDLE_SIZE / 2.0f / SCREEN_SIZE.x;
-            }
-        }
-
-        if (!SendPaddleMovement(&client, (float*)paddles, sizeof(paddles))) {
-            printf("Failed to send paddle movement data\n");
-        }
-
-        if (!ReceiveGameState(&client, paddles, &ball)) {
+        if (!ReceiveGameState(&client, &server, paddles, &ball)) {
             printf("Failed to receive game state\n");
         }
 
+        for (int i = 0; i < 4; i++) {
+            if (paddles[i].position < PADDLE_SIZE / 2.0f / SCREEN_SIZE.x) {
+                gameState.paddlePositions[i];
+                paddles[i].position = PADDLE_SIZE / 2.0f / SCREEN_SIZE.x;
+            }
+            if (paddles[i].position > 1.0f - PADDLE_SIZE / 2.0f / SCREEN_SIZE.x) {
+                gameState.paddlePositions[i];
+                paddles[i].position = 1.0f - PADDLE_SIZE / 2.0f / SCREEN_SIZE.x;
+            }
+        }
+    
+
         ball.position.x += ball.velocity.x;
         ball.position.y += ball.velocity.y;
-
+        
         for (int i = 0; i < 4; i++) {
             if (CheckPaddleCollision(ball, paddles[i], i)) {
                 if (i == 0 || i == 1) {
@@ -61,6 +64,12 @@ int main() {
         }
 
         CheckBallCollision(&ball, scores);
+        gameState.ballPosition[0] = ball.position.x;
+        gameState.ballPosition[1] = ball.position.y;
+
+        if (!SendGameState(&client, &server, gameState)) {
+            printf("Failed to send gamestate data\n");
+        }
 
         BeginDrawing();
         ClearBackground(BLACK);
@@ -74,7 +83,7 @@ int main() {
         EndDrawing();
     }
 
-    CloseClient(&client);
+    CloseClient(&client, &server);
     CloseWindow();
     return 0;
 }
